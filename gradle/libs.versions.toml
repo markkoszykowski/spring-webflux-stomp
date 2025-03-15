@@ -1,19 +1,19 @@
 [versions]
-# https://checkstyle.org/releasenotes.html
-checkstyle = "10.21.0"
+versions = "0.52.0"
 
-# https://plugins.gradle.org/plugin/org.springframework.boot
-spring = "3.4.1"
-# https://mvnrepository.com/artifact/org.projectlombok/lombok
+checkstyle = "10.21.4"
+
+spring = "3.4.3"
 lombok = "1.18.36"
-# https://mvnrepository.com/artifact/org.agrona/agrona
-agrona = "2.0.0"
+agrona = "2.1.0"
 
 
-# https://mvnrepository.com/artifact/io.cucumber/cucumber-bom
-cucumber = "7.20.1"
-# https://mvnrepository.com/artifact/org.junit/junit-bom
-junit = "5.11.4"
+cucumber = "7.21.1"
+junit = "5.12.1"
+
+
+[plugins]
+versions = { id = "com.github.ben-manes.versions", version.ref = "versions" }
 
 
 [libraries]
