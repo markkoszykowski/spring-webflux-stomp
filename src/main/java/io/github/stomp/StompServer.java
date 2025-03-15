@@ -200,7 +200,7 @@ public interface StompServer {
 	 * @param inbound      The inbound client frame.
 	 * @param outbound     The potential outbound server frame. May be <code>null</code>
 	 * @param subscription The subscription of the <code>ACK</code> frame.
-	 * @param id           Thes id of the <code>NACK</code> frame.
+	 * @param id           The id of the <code>NACK</code> frame.
 	 * @param nackMessages The list of nack-ed messages.
 	 * @return The final outbound STOMP frame.
 	 */
