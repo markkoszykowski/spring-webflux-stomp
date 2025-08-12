@@ -3,13 +3,13 @@ versions = "0.52.0"
 
 checkstyle = "10.21.4"
 
-spring = "3.4.3"
-lombok = "1.18.36"
-agrona = "2.1.0"
+spring = "3.5.4"
+lombok = "1.18.38"
+agrona = "2.2.4"
 
 
-cucumber = "7.21.1"
-junit = "5.12.1"
+cucumber = "7.27.0"
+junit = "5.13.4"
 
 
 [plugins]
