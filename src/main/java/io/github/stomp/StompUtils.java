@@ -54,15 +54,15 @@ public final class StompUtils {
 		return makeMessage(destination, subscription, null, contentType, body);
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<String, List<String>> userDefinedHeaders) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders) {
 		return makeMessage(destination, subscription, toMultiValueMap(userDefinedHeaders), null, null);
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<String, String> userDefinedHeaders) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders) {
 		return makeMessage(destination, subscription, userDefinedHeaders, null, null);
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<String, List<String>> userDefinedHeaders, final @Nullable String body) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders, final @Nullable String body) {
 		if (body == null) {
 			return makeMessage(destination, subscription, toMultiValueMap(userDefinedHeaders), null, null);
 		} else {
@@ -70,7 +70,7 @@ public final class StompUtils {
 		}
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<String, String> userDefinedHeaders, final @Nullable String body) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders, final @Nullable String body) {
 		if (body == null) {
 			return makeMessage(destination, subscription, userDefinedHeaders, null, null);
 		} else {
@@ -78,11 +78,11 @@ public final class StompUtils {
 		}
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<String, List<String>> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
 		return makeMessage(destination, subscription, toMultiValueMap(userDefinedHeaders), contentType, body);
 	}
 
-	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<String, String> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
+	public static @NonNull StompFrame makeMessage(final @NonNull String destination, final @NonNull String subscription, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
 		Assert.notNull(destination, "'destination' must not be null");
 		Assert.notNull(subscription, "'subscription' must not be null");
 
@@ -140,15 +140,15 @@ public final class StompUtils {
 		return makeError(inbound, errorHeader, null, contentType, body);
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<String, List<String>> userDefinedHeaders) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders) {
 		return makeError(inbound, errorHeader, toMultiValueMap(userDefinedHeaders), null, null);
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<String, String> userDefinedHeaders) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders) {
 		return makeError(inbound, errorHeader, userDefinedHeaders, null, null);
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<String, List<String>> userDefinedHeaders, final @Nullable String body) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders, final @Nullable String body) {
 		if (body == null) {
 			return makeError(inbound, errorHeader, toMultiValueMap(userDefinedHeaders), null, null);
 		} else {
@@ -156,7 +156,7 @@ public final class StompUtils {
 		}
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<String, String> userDefinedHeaders, final @Nullable String body) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders, final @Nullable String body) {
 		if (body == null) {
 			return makeError(inbound, errorHeader, userDefinedHeaders, null, null);
 		} else {
@@ -164,11 +164,11 @@ public final class StompUtils {
 		}
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<String, List<String>> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable Map<@NonNull String, @NonNull List<@Nullable String>> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
 		return makeError(inbound, errorHeader, toMultiValueMap(userDefinedHeaders), contentType, body);
 	}
 
-	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<String, String> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
+	public static @NonNull StompFrame makeError(final @NonNull StompFrame inbound, final @NonNull String errorHeader, final @Nullable MultiValueMap<@NonNull String, @Nullable String> userDefinedHeaders, final @Nullable MimeType contentType, final byte @Nullable [] body) {
 		Assert.notNull(inbound, "'inbound' must not be null");
 		Assert.notNull(errorHeader, "'errorHeader' must not be null");
 

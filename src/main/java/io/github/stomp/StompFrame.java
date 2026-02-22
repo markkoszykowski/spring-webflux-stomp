@@ -67,7 +67,7 @@ public final class StompFrame {
 	ExpandableDirectByteBuffer asByteBuffer;
 
 	@Builder
-	StompFrame(final @NonNull StompCommand command, final @NonNull MultiValueMap<String, String> headers, final @Nullable MimeType type, final byte @Nullable [] body) {
+	StompFrame(final @NonNull StompCommand command, final @NonNull MultiValueMap<@NonNull String, @Nullable String> headers, final @Nullable MimeType type, final byte @Nullable [] body) {
 		Assert.notNull(command, "'command' must not be null");
 		Assert.notNull(headers, "'headers' must not be null");
 
@@ -103,7 +103,7 @@ public final class StompFrame {
 		return new StompFrame(socketMessage);
 	}
 
-	public @NonNull MultiValueMap<String, String> headers() {
+	public @NonNull MultiValueMap<@NonNull String, @Nullable String> headers() {
 		if (this.immutableHeaders == null) {
 			this.immutableHeaders = CollectionUtils.unmodifiableMultiValueMap(this.headers);
 		}
