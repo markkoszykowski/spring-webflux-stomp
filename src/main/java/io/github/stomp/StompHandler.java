@@ -1,5 +1,6 @@
 package io.github.stomp;
 
+import io.github.stomp.StompServer.AckMode;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -106,7 +107,7 @@ final class StompHandler implements WebSocketHandler {
 								.takeUntilOther(receiver.ignoreElements())
 								.doOnNext(this.cacheMessageForAck(session))
 								.flatMap(this.doOnEach(session, StompServer::doOnEachOutbound))
-								.map(StompFrame.toWebSocketMessage(session))
+								.map(StompFrame.toWebSocketMessage(session.bufferFactory()))
 								.doOnError(ex -> log.error("Error during WebSocket receiving: {}", ex.getMessage()))
 				)
 				.doOnError(ex -> log.error("Error during WebSocket sending: {}", ex.getMessage()))
@@ -177,9 +178,14 @@ final class StompHandler implements WebSocketHandler {
 		}
 
 		final StompServer.AckMode ackMode = StompServer.AckMode.from(inbound.headers.getFirst(StompHeaders.ACK));
-		if (ackMode != null && ackMode != StompServer.AckMode.AUTO) {
-			this.ackSubscriptionCache.computeIfAbsent(session.getId(), _ -> new ConcurrentHashMap<>())
-					.put(subscriptionId, Tuples.of(ackMode, new ConcurrentLinkedQueue<>()));
+		if (ackMode == null) {
+			return Mono.just(StompUtils.makeError(inbound, "invalid ack mode"));
+		}
+
+		final Tuple2<AckMode, Queue<String>> existing = this.ackSubscriptionCache.computeIfAbsent(session.getId(), _ -> new ConcurrentHashMap<>())
+				.putIfAbsent(subscriptionId, Tuples.of(ackMode, new ConcurrentLinkedQueue<>()));
+		if (existing != null) {
+			return Mono.just(StompUtils.makeError(inbound, "id already in use"));
 		}
 
 		return this.server.onSubscribe(session, inbound, destination, subscriptionId, StompUtils.makeReceipt(inbound));
@@ -241,6 +247,7 @@ final class StompHandler implements WebSocketHandler {
 		final Queue<String> queue = subscriptionInfo.getT2();
 
 		final List<StompFrame> ackOrNackMessages = switch (ackMode) {
+			case AUTO -> Collections.emptyList();
 			case CLIENT -> {
 				synchronized (queue) {
 					if (queue.contains(ackId)) {
@@ -262,7 +269,6 @@ final class StompHandler implements WebSocketHandler {
 				queue.remove(ackId);
 				yield Collections.singletonList(frameCache.remove(ackId));
 			}
-			default -> Collections.emptyList();
 		};
 
 		return callback.apply(this.server, session, inbound, subscription, ackId, ackOrNackMessages, StompUtils.makeReceipt(inbound));

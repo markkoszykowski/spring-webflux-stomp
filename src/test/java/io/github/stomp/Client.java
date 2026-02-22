@@ -1,108 +1,114 @@
 package io.github.stomp;
 
+import org.agrona.LangUtil;
 import org.jspecify.annotations.NonNull;
-import org.springframework.messaging.converter.ByteArrayMessageConverter;
+import org.springframework.messaging.converter.SimpleMessageConverter;
 import org.springframework.messaging.simp.stomp.StompCommand;
-import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
+import org.springframework.messaging.simp.stomp.StompSession.Receiptable;
+import org.springframework.messaging.simp.stomp.StompSession.Subscription;
 import org.springframework.messaging.simp.stomp.StompSessionHandler;
+import org.springframework.util.Assert;
+import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.lang.reflect.Type;
+import java.net.InetAddress;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
-public class Client implements StompSession, StompSessionHandler {
+public class Client implements AutoCloseable {
 
 	private final WebSocketClient client;
 	private final WebSocketStompClient stompClient;
 	private final StompSession session;
+	private final Handler handler = new Handler();
 
-	public Client(final String hostname, final int port, final String path) throws ExecutionException, InterruptedException {
+	private final Map<String, Subscription> subscriptions = new HashMap<>();
+	private final MessageQueue<Tuple2<StompHeaders, Optional<byte[]>>> queue = new MessageQueue<>();
+
+	public Client(final InetAddress address, final int port, final String path) throws ExecutionException, InterruptedException {
 		this.client = new StandardWebSocketClient();
 		this.stompClient = new WebSocketStompClient(this.client);
-		this.stompClient.setMessageConverter(new ByteArrayMessageConverter());
+		this.stompClient.setMessageConverter(new SimpleMessageConverter());
 
-		this.session = this.stompClient.connectAsync(String.format("ws://%s:%d%s", hostname, port, path), this).get();
+		final StompHeaders headers = new StompHeaders();
+		headers.add(StompHeaders.HOST, address.getHostAddress());
+		this.session = this.stompClient.connectAsync(String.format("ws://%s:%d%s", address.getHostAddress(), port, path), (WebSocketHttpHeaders) null, headers, this.handler).get();
 	}
 
-	@Override
-	public void afterConnected(final @NonNull StompSession session, final @NonNull StompHeaders connectedHeaders) {
-	}
-
-	@Override
-	public void handleException(final @NonNull StompSession session, final StompCommand command, final @NonNull StompHeaders headers, final byte @NonNull [] payload, final @NonNull Throwable exception) {
-	}
-
-	@Override
-	public void handleTransportError(final @NonNull StompSession session, final @NonNull Throwable exception) {
-	}
-
-	@Override
-	public @NonNull Type getPayloadType(final @NonNull StompHeaders headers) {
-		return byte[].class;
-	}
-
-	@Override
-	public void handleFrame(final @NonNull StompHeaders headers, final Object payload) {
-	}
-
-
-	@Override
-	public @NonNull String getSessionId() {
-		return this.session.getSessionId();
-	}
-
-	@Override
 	public boolean isConnected() {
 		return this.session.isConnected();
 	}
 
-	@Override
-	public void setAutoReceipt(final boolean enabled) {
-		this.session.setAutoReceipt(enabled);
-	}
-
-	@Override
-	public @NonNull Receiptable send(final @NonNull String destination, final @NonNull Object payload) {
-		return this.session.send(destination, payload);
-	}
-
-	@Override
-	public @NonNull Receiptable send(final @NonNull StompHeaders headers, final @NonNull Object payload) {
-		return this.session.send(headers, payload);
-	}
-
-	@Override
-	public @NonNull Subscription subscribe(final @NonNull String destination, final @NonNull StompFrameHandler handler) {
-		return this.session.subscribe(destination, handler);
-	}
-
-	@Override
-	public @NonNull Subscription subscribe(final @NonNull StompHeaders headers, final @NonNull StompFrameHandler handler) {
-		return this.session.subscribe(headers, handler);
-	}
-
-	@Override
-	public @NonNull Receiptable acknowledge(final @NonNull String messageId, final boolean consumed) {
-		return this.session.acknowledge(messageId, consumed);
-	}
-
-	@Override
-	public @NonNull Receiptable acknowledge(final @NonNull StompHeaders headers, final boolean consumed) {
-		return this.session.acknowledge(headers, consumed);
-	}
-
-	@Override
 	public void disconnect() {
 		this.session.disconnect();
 	}
 
+	public Subscription subscription(final String id) {
+		return this.subscriptions.get(id);
+	}
+
+	public Subscription subscribe(final String destination, final String id) {
+		final StompHeaders headers = new StompHeaders();
+		headers.put(StompHeaders.DESTINATION, Collections.singletonList(destination));
+		headers.put(StompHeaders.ID, Collections.singletonList(id));
+
+		final Subscription subscription = this.session.subscribe(headers, this.handler);
+		this.subscriptions.put(id, subscription);
+		return subscription;
+	}
+
+	public Receiptable unsubscribe(final String id) {
+		final Subscription subscription = this.subscriptions.get(id);
+		Assert.notNull(subscription, "subscription '" + id + "' does not exist");
+		return subscription.unsubscribe();
+	}
+
+	public MessageQueue<Tuple2<StompHeaders, Optional<byte[]>>> queue() {
+		return this.queue;
+	}
+
 	@Override
-	public void disconnect(final @NonNull StompHeaders headers) {
-		this.session.disconnect(headers);
+	public void close() {
+		if (this.session.isConnected()) {
+			this.session.disconnect();
+		}
+		this.stompClient.stop();
+	}
+
+	private final class Handler implements StompSessionHandler {
+		@Override
+		public void afterConnected(final @NonNull StompSession session, final @NonNull StompHeaders connectedHeaders) {
+		}
+
+		@Override
+		public void handleException(final @NonNull StompSession session, final StompCommand command, final @NonNull StompHeaders headers, final byte @NonNull [] payload, final @NonNull Throwable exception) {
+			LangUtil.rethrowUnchecked(exception);
+		}
+
+		@Override
+		public void handleTransportError(final @NonNull StompSession session, final @NonNull Throwable exception) {
+			LangUtil.rethrowUnchecked(exception);
+		}
+
+		@Override
+		public @NonNull Type getPayloadType(final @NonNull StompHeaders headers) {
+			return byte[].class;
+		}
+
+		@Override
+		public void handleFrame(final @NonNull StompHeaders headers, final Object payload) {
+			Client.this.queue.add(Tuples.of(headers, Optional.ofNullable((byte[]) payload)));
+		}
 	}
 
 }

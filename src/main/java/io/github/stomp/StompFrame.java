@@ -7,6 +7,7 @@ import org.agrona.ExpandableDirectByteBuffer;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompDecoder;
@@ -17,7 +18,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.MimeType;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.socket.WebSocketMessage;
-import org.springframework.web.reactive.socket.WebSocketSession;
+import org.springframework.web.reactive.socket.WebSocketMessage.Type;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -237,8 +238,8 @@ public final class StompFrame {
 		return this.asByteBuffer.byteBuffer().asReadOnlyBuffer();
 	}
 
-	static Function<StompFrame, WebSocketMessage> toWebSocketMessage(final WebSocketSession session) {
-		return frame -> new WebSocketMessage(WebSocketMessage.Type.TEXT, session.bufferFactory().wrap(frame.toByteBuffer()));
+	static Function<StompFrame, WebSocketMessage> toWebSocketMessage(final DataBufferFactory factory) {
+		return frame -> new WebSocketMessage(Type.BINARY, factory.wrap(frame.toByteBuffer()));
 	}
 
 }

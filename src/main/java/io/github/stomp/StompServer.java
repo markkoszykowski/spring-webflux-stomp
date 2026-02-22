@@ -44,7 +44,9 @@ public interface StompServer {
 	}
 
 	enum AckMode {
-		AUTO("auto"), CLIENT("client"), CLIENT_INDIVIDUAL("client-individual");
+		AUTO("auto"),
+		CLIENT("client"),
+		CLIENT_INDIVIDUAL("client-individual");
 
 		final String ackMode;
 
@@ -54,7 +56,7 @@ public interface StompServer {
 
 		public static @Nullable AckMode from(final @Nullable String ackMode) {
 			if (ackMode == null) {
-				return null;
+				return AUTO;
 			}
 			for (final AckMode mode : AckMode.values()) {
 				if (mode.ackMode.equalsIgnoreCase(ackMode)) {
@@ -120,11 +122,11 @@ public interface StompServer {
 	 * @param session  The associated websocket session.
 	 * @param inbound  The inbound client frame.
 	 * @param version  The negotiated STOMP protocol version.
-	 * @param host     The host requested in the client frame. May be <code>null</code>
+	 * @param host     The host requested in the client frame.
 	 * @param outbound The potential outbound server frame.
 	 * @return The final outbound STOMP frame.
 	 */
-	default @NonNull Mono<StompFrame> onStomp(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull Version version, final @Nullable String host, final @NonNull StompFrame outbound) {
+	default @NonNull Mono<StompFrame> onStomp(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull Version version, final @NonNull String host, final @NonNull StompFrame outbound) {
 		return Mono.just(outbound);
 	}
 
@@ -134,11 +136,11 @@ public interface StompServer {
 	 * @param session  The associated websocket session.
 	 * @param inbound  The inbound client frame.
 	 * @param version  The negotiated STOMP protocol version.
-	 * @param host     The host requested in the client frame. May be <code>null</code>
+	 * @param host     The host requested in the client frame.
 	 * @param outbound The potential outbound server frame.
 	 * @return The final outbound STOMP frame.
 	 */
-	default @NonNull Mono<StompFrame> onConnect(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull Version version, final @Nullable String host, final @NonNull StompFrame outbound) {
+	default @NonNull Mono<StompFrame> onConnect(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull Version version, final @NonNull String host, final @NonNull StompFrame outbound) {
 		return Mono.just(outbound);
 	}
 

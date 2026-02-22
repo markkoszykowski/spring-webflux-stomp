@@ -2,12 +2,19 @@ package io.github.stomp;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
 import org.springframework.context.ApplicationContext;
+import org.springframework.util.Assert;
 
 @SpringBootApplication
-public class Server {
+public class Server implements AutoCloseable {
 
 	private ApplicationContext context = null;
+
+	public ServerProperties properties() {
+		Assert.notNull(this.context, "server is not started");
+		return this.context.getBean(ServerProperties.class);
+	}
 
 	public Server start() {
 		if (this.context == null) {
@@ -24,6 +31,11 @@ public class Server {
 			this.context = null;
 		}
 		return this;
+	}
+
+	@Override
+	public void close() {
+		this.stop();
 	}
 
 }
