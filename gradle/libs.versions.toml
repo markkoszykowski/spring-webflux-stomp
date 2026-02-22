@@ -1,15 +1,15 @@
 [versions]
-versions = "0.52.0"
+versions = "0.53.0"
 
-checkstyle = "10.21.4"
+checkstyle = "13.2.0"
 
-spring = "3.5.4"
-lombok = "1.18.38"
-agrona = "2.2.4"
+spring = "4.0.3"
+lombok = "1.18.42"
+agrona = "2.4.0"
 
 
-cucumber = "7.27.0"
-junit = "5.13.4"
+cucumber = "7.34.2"
+junit = "6.0.3"
 
 
 [plugins]

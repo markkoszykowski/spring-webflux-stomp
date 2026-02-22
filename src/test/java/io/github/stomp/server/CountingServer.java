@@ -3,6 +3,7 @@ package io.github.stomp.server;
 import io.github.stomp.StompFrame;
 import io.github.stomp.StompServer;
 import io.github.stomp.StompUtils;
+import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.Disposable;
@@ -42,20 +43,20 @@ public class CountingServer implements StompServer {
 	}
 
 	@Override
-	public Mono<List<Flux<StompFrame>>> addWebSocketSources(final WebSocketSession session) {
+	public @NonNull Mono<List<Flux<StompFrame>>> addWebSocketSources(final @NonNull WebSocketSession session) {
 		return Mono.just(
 				Collections.singletonList(
-						this.sinks.computeIfAbsent(session.getId(), k -> Sinks.many().unicast().onBackpressureBuffer()).asFlux()
+						this.sinks.computeIfAbsent(session.getId(), _ -> Sinks.many().unicast().onBackpressureBuffer()).asFlux()
 				)
 		);
 	}
 
 	@Override
-	public Mono<Void> doFinally(final WebSocketSession session, final Map<String, Tuple2<AckMode, Queue<String>>> subscriptionCache, final Map<String, StompFrame> frameCache) {
+	public @NonNull Mono<Void> doFinally(final @NonNull WebSocketSession session, final Map<String, Tuple2<AckMode, Queue<String>>> subscriptionCache, final Map<String, StompFrame> frameCache) {
 		final String sessionId = session.getId();
 		final Map<String, Disposable> subscriptions = this.subscriptions.remove(sessionId);
 		if (subscriptions != null) {
-			subscriptions.forEach((k, v) -> {
+			subscriptions.forEach((_, v) -> {
 				if (v != null) {
 					v.dispose();
 				}
@@ -66,8 +67,8 @@ public class CountingServer implements StompServer {
 	}
 
 	@Override
-	public Mono<StompFrame> onSubscribe(final WebSocketSession session, final StompFrame inbound, final StompFrame outbound, final String destination, final String subscriptionId) {
-		this.subscriptions.computeIfAbsent(session.getId(), k -> new ConcurrentHashMap<>())
+	public @NonNull Mono<StompFrame> onSubscribe(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull String destination, final @NonNull String subscriptionId, final StompFrame outbound) {
+		this.subscriptions.computeIfAbsent(session.getId(), _ -> new ConcurrentHashMap<>())
 				.put(
 						subscriptionId,
 						Flux.interval(Duration.ofMillis(DELAY_MILLIS))
@@ -81,11 +82,11 @@ public class CountingServer implements StompServer {
 								.subscribe()
 				);
 
-		return StompServer.super.onSubscribe(session, inbound, outbound, destination, subscriptionId);
+		return StompServer.super.onSubscribe(session, inbound, destination, subscriptionId, outbound);
 	}
 
 	@Override
-	public Mono<StompFrame> onUnsubscribe(final WebSocketSession session, final StompFrame inbound, final StompFrame outbound, final String subscriptionId) {
+	public @NonNull Mono<StompFrame> onUnsubscribe(final @NonNull WebSocketSession session, final @NonNull StompFrame inbound, final @NonNull String subscriptionId, final StompFrame outbound) {
 		final Map<String, Disposable> sessionSubscriptions = this.subscriptions.get(session.getId());
 		if (sessionSubscriptions != null) {
 			final Disposable disposable = sessionSubscriptions.remove(subscriptionId);
@@ -93,7 +94,7 @@ public class CountingServer implements StompServer {
 				disposable.dispose();
 			}
 		}
-		return StompServer.super.onUnsubscribe(session, inbound, outbound, subscriptionId);
+		return StompServer.super.onUnsubscribe(session, inbound, subscriptionId, outbound);
 	}
 
 }

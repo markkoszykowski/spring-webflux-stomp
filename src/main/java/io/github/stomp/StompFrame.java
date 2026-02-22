@@ -4,6 +4,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.agrona.ExpandableDirectByteBuffer;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -50,26 +52,28 @@ public final class StompFrame {
 	}
 
 	@Getter
+	@NonNull
 	@Accessors(fluent = true)
 	final StompCommand command;
 	final MultiValueMap<String, String> headers;
 	MultiValueMap<String, String> immutableHeaders;
 	@Getter
+	@Nullable
 	@Accessors(fluent = true)
-	final Charset bodyCharset;
+	final MimeType type;
 	final byte[] body;
 
 	String asString;
 	ExpandableDirectByteBuffer asByteBuffer;
 
 	@Builder
-	StompFrame(final StompCommand command, final MultiValueMap<String, String> headers, final Charset bodyCharset, final byte[] body) {
+	StompFrame(final @NonNull StompCommand command, final @NonNull MultiValueMap<String, String> headers, final @Nullable MimeType type, final byte @Nullable [] body) {
 		Assert.notNull(command, "'command' must not be null");
 		Assert.notNull(headers, "'headers' must not be null");
 
 		this.command = command;
 		this.headers = headers;
-		this.bodyCharset = bodyCharset;
+		this.type = type;
 		this.body = body;
 
 		this.asString = null;
@@ -88,37 +92,37 @@ public final class StompFrame {
 
 		this.command = parseCommand(accessor);
 		this.headers = parseHeaders(accessor);
-		this.bodyCharset = parseBodyCharset(accessor);
+		this.type = parseType(accessor);
 		this.body = parseBody(message, accessor);
 
 		this.asString = null;
 		this.asByteBuffer = null;
 	}
 
-	public static StompFrame from(final WebSocketMessage socketMessage) {
+	public static @NonNull StompFrame from(final @NonNull WebSocketMessage socketMessage) {
 		return new StompFrame(socketMessage);
 	}
 
-	public MultiValueMap<String, String> headers() {
+	public @NonNull MultiValueMap<String, String> headers() {
 		if (this.immutableHeaders == null) {
 			this.immutableHeaders = CollectionUtils.unmodifiableMultiValueMap(this.headers);
 		}
 		return this.immutableHeaders;
 	}
 
-	public byte[] body() {
+	public byte @Nullable [] body() {
 		return this.body == null ? null : this.body.clone();
 	}
 
-	public String commandString() {
+	public @NonNull String commandString() {
 		return this.command.name();
 	}
 
-	public StompFrame.StompFrameBuilder mutate() {
+	public StompFrame.@NonNull StompFrameBuilder mutate() {
 		return StompFrame.builder()
 				.command(this.command)
 				.headers(this.headers)
-				.bodyCharset(this.bodyCharset)
+				.type(this.type)
 				.body(this.body);
 	}
 
@@ -135,9 +139,8 @@ public final class StompFrame {
 		return CollectionUtils.toMultiValueMap(headers == null ? Collections.emptyMap() : headers);
 	}
 
-	static Charset parseBodyCharset(final StompHeaderAccessor accessor) {
-		final MimeType contentType = accessor.getContentType();
-		return contentType == null ? null : contentType.getCharset();
+	static MimeType parseType(final StompHeaderAccessor accessor) {
+		return accessor.getContentType();
 	}
 
 	static byte[] parseBody(final Message<byte[]> message, final StompHeaderAccessor accessor) {
@@ -156,7 +159,7 @@ public final class StompFrame {
 	}
 
 	@Override
-	public String toString() {
+	public @NonNull String toString() {
 		if (this.asString != null) {
 			return this.asString;
 		}
@@ -178,14 +181,14 @@ public final class StompFrame {
 		sb.append(EOL);
 
 		if (this.body != null) {
-			if (this.bodyCharset == null) {
+			if (this.type == null || this.type.getCharset() == null) {
 				for (final byte b : this.body) {
 					for (int i = Byte.SIZE - 1; 0 <= i; --i) {
 						sb.append(((b >>> i) & 0b1) == 0 ? '0' : '1');
 					}
 				}
 			} else {
-				sb.append(new String(this.body, this.bodyCharset));
+				sb.append(new String(this.body, this.type.getCharset()));
 			}
 		}
 
@@ -199,7 +202,7 @@ public final class StompFrame {
 		return index + bytes.length;
 	}
 
-	public ByteBuffer toByteBuffer() {
+	public @NonNull ByteBuffer toByteBuffer() {
 		if (this.asByteBuffer != null) {
 			return this.asByteBuffer.byteBuffer().asReadOnlyBuffer();
 		}

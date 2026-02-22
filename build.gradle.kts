@@ -1,4 +1,5 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
+import com.github.benmanes.gradle.versions.updates.gradle.GradleReleaseChannel
 import com.github.benmanes.gradle.versions.updates.resolutionstrategy.ComponentSelectionWithCurrent
 
 plugins {
@@ -10,7 +11,7 @@ plugins {
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 
@@ -19,10 +20,6 @@ idea {
 		isDownloadJavadoc = true
 		isDownloadSources = true
 	}
-}
-
-checkstyle {
-	toolVersion = libs.versions.checkstyle.get()
 }
 
 checkstyle {
@@ -73,19 +70,15 @@ fun isNonStable(version: String): Boolean {
 	return isStable.not()
 }
 
-class SelectionRules : Action<ComponentSelectionWithCurrent> {
-	override fun execute(selection: ComponentSelectionWithCurrent) {
-		if (isNonStable(selection.candidate.version) && !isNonStable(selection.currentVersion)) {
-			selection.reject("Release candidate")
-		}
-	}
-
-}
-
 tasks.withType<DependencyUpdatesTask> {
+	gradleReleaseChannel = GradleReleaseChannel.CURRENT.id
 	resolutionStrategy {
 		componentSelection {
-			all(SelectionRules())
+			all(Action<ComponentSelectionWithCurrent> {
+				if (isNonStable(candidate.version) && !isNonStable(currentVersion)) {
+					reject("Release candidate")
+				}
+			})
 		}
 	}
 }

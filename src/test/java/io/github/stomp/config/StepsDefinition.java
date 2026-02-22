@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+@SuppressWarnings(value = {"unused"})
 public class StepsDefinition {
 
 	private final Environment environment;

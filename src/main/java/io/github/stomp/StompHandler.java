@@ -1,7 +1,7 @@
 package io.github.stomp;
 
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.util.Assert;
@@ -38,18 +38,21 @@ final class StompHandler implements WebSocketHandler {
 		this.server = server;
 	}
 
-	static final List<StompServer.Version> SUPPORTED_VERSIONS = List.of(StompServer.Version.v1_2, StompServer.Version.v1_1, StompServer.Version.v1_0);
+	static final List<StompServer.Version> SUPPORTED_VERSIONS = List.of(
+			StompServer.Version.v1_2,
+			StompServer.Version.v1_1,
+			StompServer.Version.v1_0
+	);
 
 	static String versionsToString(final String delimiter) {
 		return SUPPORTED_VERSIONS.stream()
-				.sorted(Comparator.comparing(StompServer.Version::version))
+				.sorted(Comparator.comparingInt(StompServer.Version::version))
 				.map(StompServer.Version::toString)
 				.collect(Collectors.joining(delimiter));
 	}
 
-	@NonNull
 	@Override
-	public List<String> getSubProtocols() {
+	public @NonNull List<String> getSubProtocols() {
 		return SUPPORTED_VERSIONS.stream()
 				.map(StompServer.Version::toString)
 				.map(v -> String.format("STOMP %s", v))
@@ -95,9 +98,8 @@ final class StompHandler implements WebSocketHandler {
 				.cache(0);
 	}
 
-	@NonNull
 	@Override
-	public Mono<Void> handle(@NonNull final WebSocketSession session) {
+	public @NonNull Mono<Void> handle(final @NonNull WebSocketSession session) {
 		final Flux<StompFrame> receiver = this.sessionReceiver(session);
 		return session.send(
 						receiver.mergeWith(this.server.addWebSocketSources(session).flatMapMany(Flux::merge))
@@ -118,7 +120,7 @@ final class StompHandler implements WebSocketHandler {
 		return frame -> doOnEach.apply(this.server, session, frame).thenReturn(frame);
 	}
 
-	Mono<StompFrame> handleProtocolNegotiation(final WebSocketSession session, final StompFrame inbound, final HexFunction<StompServer, WebSocketSession, StompFrame, StompFrame, StompServer.Version, String, Mono<StompFrame>> callback) {
+	Mono<StompFrame> handleProtocolNegotiation(final WebSocketSession session, final StompFrame inbound, final HexFunction<StompServer, WebSocketSession, StompFrame, StompServer.Version, String, StompFrame, Mono<StompFrame>> callback) {
 		final String versionsString = inbound.headers.getFirst(StompHeaders.ACCEPT_VERSION);
 		final StompServer.Version usingVersion;
 		if (versionsString == null) {
@@ -144,7 +146,7 @@ final class StompHandler implements WebSocketHandler {
 		headers.add(StompUtils.VERSION, usingVersion.toString());
 		headers.add(StompHeaders.SESSION, session.getId());
 
-		return callback.apply(this.server, session, inbound, new StompFrame(StompCommand.CONNECTED, headers, null, null), usingVersion, host);
+		return callback.apply(this.server, session, inbound, usingVersion, host, new StompFrame(StompCommand.CONNECTED, headers, null, null));
 	}
 
 	Mono<StompFrame> handleStomp(final WebSocketSession session, final StompFrame inbound) {
@@ -160,7 +162,7 @@ final class StompHandler implements WebSocketHandler {
 		if (destination == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompHeaders.DESTINATION));
 		}
-		return this.server.onSend(session, inbound, StompUtils.makeReceipt(inbound), destination);
+		return this.server.onSend(session, inbound, destination, StompUtils.makeReceipt(inbound));
 	}
 
 	Mono<StompFrame> handleSubscribe(final WebSocketSession session, final StompFrame inbound) {
@@ -176,11 +178,11 @@ final class StompHandler implements WebSocketHandler {
 
 		final StompServer.AckMode ackMode = StompServer.AckMode.from(inbound.headers.getFirst(StompHeaders.ACK));
 		if (ackMode != null && ackMode != StompServer.AckMode.AUTO) {
-			this.ackSubscriptionCache.computeIfAbsent(session.getId(), k -> new ConcurrentHashMap<>())
+			this.ackSubscriptionCache.computeIfAbsent(session.getId(), _ -> new ConcurrentHashMap<>())
 					.put(subscriptionId, Tuples.of(ackMode, new ConcurrentLinkedQueue<>()));
 		}
 
-		return this.server.onSubscribe(session, inbound, StompUtils.makeReceipt(inbound), destination, subscriptionId);
+		return this.server.onSubscribe(session, inbound, destination, subscriptionId, StompUtils.makeReceipt(inbound));
 	}
 
 	Mono<StompFrame> handleUnsubscribe(final WebSocketSession session, final StompFrame inbound) {
@@ -202,10 +204,10 @@ final class StompHandler implements WebSocketHandler {
 			}
 		}
 
-		return this.server.onUnsubscribe(session, inbound, StompUtils.makeReceipt(inbound), subscriptionId);
+		return this.server.onUnsubscribe(session, inbound, subscriptionId, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleAckOrNack(final WebSocketSession session, final StompFrame inbound, final HeptFunction<StompServer, WebSocketSession, StompFrame, StompFrame, String, String, List<StompFrame>, Mono<StompFrame>> callback) {
+	Mono<StompFrame> handleAckOrNack(final WebSocketSession session, final StompFrame inbound, final HeptFunction<StompServer, WebSocketSession, StompFrame, String, String, List<StompFrame>, StompFrame, Mono<StompFrame>> callback) {
 		final String sessionId = session.getId();
 		final String ackId = inbound.headers.getFirst(StompHeaders.ID);
 		if (ackId == null) {
@@ -263,7 +265,7 @@ final class StompHandler implements WebSocketHandler {
 			default -> Collections.emptyList();
 		};
 
-		return callback.apply(this.server, session, inbound, StompUtils.makeReceipt(inbound), subscription, ackId, ackOrNackMessages);
+		return callback.apply(this.server, session, inbound, subscription, ackId, ackOrNackMessages, StompUtils.makeReceipt(inbound));
 	}
 
 	Mono<StompFrame> handleAck(final WebSocketSession session, final StompFrame inbound) {
@@ -274,12 +276,12 @@ final class StompHandler implements WebSocketHandler {
 		return this.handleAckOrNack(session, inbound, StompServer::onNack);
 	}
 
-	Mono<StompFrame> handleTransactionFrame(final WebSocketSession session, final StompFrame inbound, final QuintFunction<StompServer, WebSocketSession, StompFrame, StompFrame, String, Mono<StompFrame>> callback) {
+	Mono<StompFrame> handleTransactionFrame(final WebSocketSession session, final StompFrame inbound, final QuintFunction<StompServer, WebSocketSession, StompFrame, String, StompFrame, Mono<StompFrame>> callback) {
 		final String transaction = inbound.headers.getFirst(StompUtils.TRANSACTION);
 		if (transaction == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompUtils.TRANSACTION));
 		}
-		return callback.apply(this.server, session, inbound, StompUtils.makeReceipt(inbound), transaction);
+		return callback.apply(this.server, session, inbound, transaction, StompUtils.makeReceipt(inbound));
 	}
 
 	Mono<StompFrame> handleBegin(final WebSocketSession session, final StompFrame inbound) {
@@ -296,7 +298,7 @@ final class StompHandler implements WebSocketHandler {
 
 	Mono<StompFrame> handleDisconnect(final WebSocketSession session, final StompFrame inbound) {
 		final String sessionId = session.getId();
-		return this.server.onDisconnect(session, inbound, StompUtils.makeReceipt(inbound), this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId));
+		return this.server.onDisconnect(session, inbound, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId), StompUtils.makeReceipt(inbound));
 	}
 
 	Mono<Void> handleError(final WebSocketSession session, final StompFrame inbound, final StompFrame outbound) {
@@ -304,7 +306,7 @@ final class StompHandler implements WebSocketHandler {
 			return Mono.empty();
 		}
 		final String sessionId = session.getId();
-		return this.server.onError(session, inbound, outbound, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId));
+		return this.server.onError(session, inbound, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId), outbound);
 	}
 
 	Consumer<StompFrame> cacheMessageForAck(final WebSocketSession session) {
@@ -329,7 +331,7 @@ final class StompHandler implements WebSocketHandler {
 
 			final String ackId = UUID.randomUUID().toString();
 			subscriptionInfo.getT2().add(ackId);
-			this.ackFrameCache.computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>()).put(ackId, outbound);
+			this.ackFrameCache.computeIfAbsent(sessionId, _ -> new ConcurrentHashMap<>()).put(ackId, outbound);
 
 			outbound.headers.add(StompHeaders.ACK, ackId);
 		};

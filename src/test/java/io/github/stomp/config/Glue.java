@@ -3,6 +3,7 @@ package io.github.stomp.config;
 import io.cucumber.java.ParameterType;
 import io.github.stomp.server.Endpoint;
 
+@SuppressWarnings(value = {"unused"})
 public class Glue {
 
 	@ParameterType(value = "counting|hello world")

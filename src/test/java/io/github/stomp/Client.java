@@ -1,5 +1,6 @@
 package io.github.stomp;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.messaging.converter.ByteArrayMessageConverter;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
@@ -28,33 +29,29 @@ public class Client implements StompSession, StompSessionHandler {
 	}
 
 	@Override
-	public void afterConnected(final StompSession session, final StompHeaders connectedHeaders) {
-
+	public void afterConnected(final @NonNull StompSession session, final @NonNull StompHeaders connectedHeaders) {
 	}
 
 	@Override
-	public void handleException(final StompSession session, final StompCommand command, final StompHeaders headers, final byte[] payload, final Throwable exception) {
-
+	public void handleException(final @NonNull StompSession session, final StompCommand command, final @NonNull StompHeaders headers, final byte @NonNull [] payload, final @NonNull Throwable exception) {
 	}
 
 	@Override
-	public void handleTransportError(final StompSession session, final Throwable exception) {
-
+	public void handleTransportError(final @NonNull StompSession session, final @NonNull Throwable exception) {
 	}
 
 	@Override
-	public Type getPayloadType(final StompHeaders headers) {
+	public @NonNull Type getPayloadType(final @NonNull StompHeaders headers) {
 		return byte[].class;
 	}
 
 	@Override
-	public void handleFrame(final StompHeaders headers, final Object payload) {
-
+	public void handleFrame(final @NonNull StompHeaders headers, final Object payload) {
 	}
 
 
 	@Override
-	public String getSessionId() {
+	public @NonNull String getSessionId() {
 		return this.session.getSessionId();
 	}
 
@@ -69,32 +66,32 @@ public class Client implements StompSession, StompSessionHandler {
 	}
 
 	@Override
-	public Receiptable send(final String destination, final Object payload) {
+	public @NonNull Receiptable send(final @NonNull String destination, final @NonNull Object payload) {
 		return this.session.send(destination, payload);
 	}
 
 	@Override
-	public Receiptable send(final StompHeaders headers, final Object payload) {
+	public @NonNull Receiptable send(final @NonNull StompHeaders headers, final @NonNull Object payload) {
 		return this.session.send(headers, payload);
 	}
 
 	@Override
-	public Subscription subscribe(final String destination, final StompFrameHandler handler) {
-		return this.subscribe(destination, handler);
+	public @NonNull Subscription subscribe(final @NonNull String destination, final @NonNull StompFrameHandler handler) {
+		return this.session.subscribe(destination, handler);
 	}
 
 	@Override
-	public Subscription subscribe(final StompHeaders headers, final StompFrameHandler handler) {
-		return this.subscribe(headers, handler);
+	public @NonNull Subscription subscribe(final @NonNull StompHeaders headers, final @NonNull StompFrameHandler handler) {
+		return this.session.subscribe(headers, handler);
 	}
 
 	@Override
-	public Receiptable acknowledge(final String messageId, final boolean consumed) {
-		return this.acknowledge(messageId, consumed);
+	public @NonNull Receiptable acknowledge(final @NonNull String messageId, final boolean consumed) {
+		return this.session.acknowledge(messageId, consumed);
 	}
 
 	@Override
-	public Receiptable acknowledge(final StompHeaders headers, final boolean consumed) {
+	public @NonNull Receiptable acknowledge(final @NonNull StompHeaders headers, final boolean consumed) {
 		return this.session.acknowledge(headers, consumed);
 	}
 
@@ -104,7 +101,7 @@ public class Client implements StompSession, StompSessionHandler {
 	}
 
 	@Override
-	public void disconnect(final StompHeaders headers) {
+	public void disconnect(final @NonNull StompHeaders headers) {
 		this.session.disconnect(headers);
 	}
 
