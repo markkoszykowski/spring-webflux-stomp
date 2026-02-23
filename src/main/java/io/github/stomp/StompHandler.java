@@ -1,6 +1,7 @@
 package io.github.stomp;
 
 import io.github.stomp.StompServer.AckMode;
+import io.github.stomp.StompServer.Version;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -45,6 +46,10 @@ final class StompHandler implements WebSocketHandler {
 			StompServer.Version.v1_0
 	);
 
+	static final List<String> SUB_PROTOCOLS = SUPPORTED_VERSIONS.stream()
+			.map(Version::subProtocol)
+			.toList();
+
 	static String versionsToString(final String delimiter) {
 		return SUPPORTED_VERSIONS.stream()
 				.sorted(Comparator.comparingInt(StompServer.Version::version))
@@ -54,10 +59,7 @@ final class StompHandler implements WebSocketHandler {
 
 	@Override
 	public @NonNull List<String> getSubProtocols() {
-		return SUPPORTED_VERSIONS.stream()
-				.map(StompServer.Version::toString)
-				.map(v -> String.format("STOMP %s", v))
-				.collect(Collectors.toList());
+		return SUB_PROTOCOLS;
 	}
 
 	// Caches

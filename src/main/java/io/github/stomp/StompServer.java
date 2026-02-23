@@ -1,5 +1,7 @@
 package io.github.stomp;
 
+import lombok.Getter;
+import lombok.experimental.Accessors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
@@ -21,16 +23,25 @@ public interface StompServer {
 	String path();
 
 	enum Version {
-		v1_0(1_0, "1.0"),
-		v1_1(1_1, "1.1"),
-		v1_2(1_2, "1.2");
+		v1_0(1_0, "1.0", "v10.stomp"),
+		v1_1(1_1, "1.1", "v11.stomp"),
+		v1_2(1_2, "1.2", "v12.stomp");
 
 		final int intVersion;
 		final String version;
+		@Getter
+		@NonNull
+		@Accessors(fluent = true)
+		final String subProtocol;
 
-		Version(final int intVersion, final String version) {
+		Version(
+				final int intVersion,
+				final String version,
+				final String subProtocol
+		) {
 			this.intVersion = intVersion;
 			this.version = version;
+			this.subProtocol = subProtocol;
 		}
 
 		public int version() {
