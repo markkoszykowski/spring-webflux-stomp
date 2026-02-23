@@ -2,6 +2,7 @@ package io.github.stomp;
 
 import io.github.stomp.StompServer.AckMode;
 import io.github.stomp.StompServer.Version;
+import io.netty.handler.timeout.ReadTimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -10,12 +11,19 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.socket.WebSocketHandler;
+import org.springframework.web.reactive.socket.WebSocketMessage;
+import org.springframework.web.reactive.socket.WebSocketMessage.Type;
 import org.springframework.web.reactive.socket.WebSocketSession;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -27,12 +35,18 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
 final class StompHandler implements WebSocketHandler {
+
+	static final Scheduler HEARTBEAT_SCHEDULER = Schedulers.parallel();
 
 	final StompServer server;
 
@@ -68,7 +82,7 @@ final class StompHandler implements WebSocketHandler {
 	// SessionId -> Ack -> StompFrame
 	final Map<String, Map<String, StompFrame>> ackFrameCache = new ConcurrentHashMap<>();
 
-	static TriFunction<StompHandler, WebSocketSession, StompFrame, Mono<StompFrame>> handler(final StompCommand command) {
+	static TriFunction<StompHandler, StompSession, StompFrame, Mono<StompFrame>> handler(final StompCommand command) {
 		return switch (command) {
 			case StompCommand.STOMP -> StompHandler::handleStomp;
 			case StompCommand.CONNECT -> StompHandler::handleConnect;
@@ -85,45 +99,93 @@ final class StompHandler implements WebSocketHandler {
 		};
 	}
 
-	Function<StompFrame, Mono<StompFrame>> handler(final WebSocketSession session) {
+	Function<StompFrame, Mono<StompFrame>> handler(final StompSession session) {
 		return inbound -> handler(inbound.command)
 				.apply(this, session, inbound)
 				.flatMap(outbound -> this.handleError(session, inbound, outbound).thenReturn(outbound));
 	}
 
-	Flux<StompFrame> sessionReceiver(final WebSocketSession session) {
-		return session.receive()
+	Flux<StompFrame> heartbeatReceiver(final StompSession session, final Flux<WebSocketMessage> receives) {
+		return receives.filter(StompFrame::isHeartbeat)
+				.flatMap(this.doOnEachHeartbeat(session, StompServer::doOnEachInboundHeartbeat))
+				.flatMap(_ -> Mono.empty());
+	}
+
+	Flux<StompFrame> frameReceiver(final StompSession session, final Flux<WebSocketMessage> receives) {
+		return receives.filter(Predicate.not(StompFrame::isHeartbeat))
 				.map(StompFrame::from)
-				.flatMap(this.doOnEach(session, StompServer::doOnEachInbound))
+				.flatMap(this.doOnEachFrame(session, StompServer::doOnEachInboundFrame))
 				.takeUntil(inbound -> inbound.command == StompCommand.DISCONNECT)
 				.flatMap(this.handler(session))
-				.takeUntil(outbound -> outbound.command == StompCommand.ERROR)
-				.cache(0);
+				.takeUntil(outbound -> outbound.command == StompCommand.ERROR);
+	}
+
+	Flux<WebSocketMessage> heartbeatSender(final StompSession session, final Flux<StompFrame> heartbeats) {
+		return Flux.merge(
+				session.outgoing.asFlux().mapNotNull(_ -> this.handleOutgoingHeartbeat(session)),
+				session.incoming.asFlux().mapNotNull(_ -> this.handleIncomingHeartbeat(session))
+		);
+	}
+
+	Flux<WebSocketMessage> frameSender(final StompSession session, final Flux<StompFrame> frames) {
+		return frames.mergeWith(this.server.addWebSocketSources(session).flatMapMany(Flux::merge))
+				.doOnNext(this.cacheMessageForAck(session))
+				.flatMap(this.doOnEachFrame(session, StompServer::doOnEachOutboundFrame))
+				.map(StompFrame.toWebSocketMessage(session.session.bufferFactory()));
 	}
 
 	@Override
-	public @NonNull Mono<Void> handle(final @NonNull WebSocketSession session) {
-		final Flux<StompFrame> receiver = this.sessionReceiver(session);
-		return session.send(
-						receiver.mergeWith(this.server.addWebSocketSources(session).flatMapMany(Flux::merge))
-								.takeUntilOther(receiver.ignoreElements())
-								.doOnNext(this.cacheMessageForAck(session))
-								.flatMap(this.doOnEach(session, StompServer::doOnEachOutbound))
-								.map(StompFrame.toWebSocketMessage(session.bufferFactory()))
-								.doOnError(ex -> log.error("Error during WebSocket receiving: {}", ex.getMessage()))
+	public @NonNull Mono<Void> handle(final @NonNull WebSocketSession socketSession) {
+		final StompSession session = new StompSession(socketSession);
+		final Flux<WebSocketMessage> receives = session.session.receive().cache(0)
+				.doOnNext(this.handleIncoming(session));
+		final Flux<StompFrame> heartbeats = this.heartbeatReceiver(session, receives).cache(0);
+		final Flux<StompFrame> frames = this.frameReceiver(session, receives).cache(0);
+		final Flux<WebSocketMessage> sends = Flux.merge(this.heartbeatSender(session, heartbeats), this.frameSender(session, frames))
+				.doOnNext(this.handleOutgoing(session));
+		return session.session.send(
+						sends.doOnError(ex -> log.error("Error during WebSocket receiving", ex))
+								.takeUntilOther(receives.ignoreElements())
+								.takeUntilOther(heartbeats.ignoreElements())
+								.takeUntilOther(frames.ignoreElements())
 				)
-				.doOnError(ex -> log.error("Error during WebSocket sending: {}", ex.getMessage()))
-				.then(Mono.defer(() -> {
-					final String sessionId = session.getId();
-					return this.server.doFinally(session, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId));
-				}));
+				.doOnError(ex -> log.error("Error during WebSocket sending", ex))
+				.then(Mono.defer(this.doFinally(session)));
 	}
 
-	Function<StompFrame, Mono<StompFrame>> doOnEach(final WebSocketSession session, final TriFunction<StompServer, WebSocketSession, StompFrame, Mono<Void>> doOnEach) {
+	<T> Consumer<T> handleOutgoing(final StompSession session) {
+		return _ -> {
+			session.sent();
+			this.scheduleOutgoingHeartbeat(session);
+		};
+	}
+
+	<T> Consumer<T> handleIncoming(final StompSession session) {
+		return _ -> {
+			session.received();
+			this.scheduleIncomingHeartbeat(session);
+		};
+	}
+
+	<T> Function<T, Mono<T>> doOnEachHeartbeat(final StompSession session, final BiFunction<StompServer, StompSession, Mono<Void>> doOnEach) {
+		return t -> doOnEach.apply(this.server, session).thenReturn(t);
+	}
+
+	Function<StompFrame, Mono<StompFrame>> doOnEachFrame(final StompSession session, final TriFunction<StompServer, StompSession, StompFrame, Mono<Void>> doOnEach) {
 		return frame -> doOnEach.apply(this.server, session, frame).thenReturn(frame);
 	}
 
-	Mono<StompFrame> handleProtocolNegotiation(final WebSocketSession session, final StompFrame inbound, final HexFunction<StompServer, WebSocketSession, StompFrame, StompServer.Version, String, StompFrame, Mono<StompFrame>> callback) {
+	Supplier<Mono<Void>> doFinally(final StompSession session) {
+		return () -> {
+			dispose(session.scheduledOutgoing.getAndSet(null));
+			dispose(session.scheduledIncoming.getAndSet(null));
+
+			final String sessionId = session.id();
+			return this.server.doFinally(session, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId));
+		};
+	}
+
+	Mono<StompFrame> handleProtocolNegotiation(final StompSession session, final StompFrame inbound, final HexFunction<StompServer, StompSession, StompFrame, StompServer.Version, String, StompFrame, Mono<StompFrame>> callback) {
 		final String versionsString = inbound.headers.getFirst(StompHeaders.ACCEPT_VERSION);
 		final StompServer.Version usingVersion;
 		if (versionsString == null) {
@@ -147,20 +209,62 @@ final class StompHandler implements WebSocketHandler {
 
 		final MultiValueMap<String, String> headers = CollectionUtils.toMultiValueMap(new HashMap<>());
 		headers.add(StompUtils.VERSION, usingVersion.toString());
-		headers.add(StompHeaders.SESSION, session.getId());
+		headers.add(StompHeaders.SESSION, session.id());
 
 		return callback.apply(this.server, session, inbound, usingVersion, host, new StompFrame(StompCommand.CONNECTED, headers, null, null));
 	}
 
-	Mono<StompFrame> handleStomp(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleStomp(final StompSession session, final StompFrame inbound) {
 		return this.handleProtocolNegotiation(session, inbound, StompServer::onStomp);
 	}
 
-	Mono<StompFrame> handleConnect(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleConnect(final StompSession session, final StompFrame inbound) {
 		return this.handleProtocolNegotiation(session, inbound, StompServer::onConnect);
 	}
 
-	Mono<StompFrame> handleSend(final WebSocketSession session, final StompFrame inbound) {
+	static void dispose(final Disposable disposable) {
+		if (disposable != null && !disposable.isDisposed()) {
+			disposable.dispose();
+		}
+	}
+
+	static void schedule(final Duration heartbeat, final Sinks.Many<byte[]> sink, final AtomicReference<Disposable> disposable) {
+		if (heartbeat.isPositive()) {
+			dispose(
+					disposable.getAndSet(
+							Mono.just(StompFrame.EOL_BYTES)
+									.delayElement(heartbeat, HEARTBEAT_SCHEDULER)
+									.doOnNext(sink::tryEmitNext)
+									.subscribeOn(HEARTBEAT_SCHEDULER)
+									.subscribe()
+					)
+			);
+		}
+	}
+
+	void scheduleOutgoingHeartbeat(final StompSession session) {
+		schedule(session.outgoingHeartbeat, session.outgoing, session.scheduledOutgoing);
+	}
+
+	void scheduleIncomingHeartbeat(final StompSession session) {
+		schedule(session.incomingHeartbeat, session.incoming, session.scheduledIncoming);
+	}
+
+	WebSocketMessage handleOutgoingHeartbeat(final StompSession session) {
+		if (session.lastSent() + session.outgoingHeartbeat.toMillis() <= System.currentTimeMillis()) {
+			return new WebSocketMessage(Type.BINARY, session.session.bufferFactory().wrap(StompFrame.EOL_BYTES));
+		}
+		return null;
+	}
+
+	WebSocketMessage handleIncomingHeartbeat(final StompSession session) {
+		if (session.lastReceived() + session.incomingHeartbeat.toMillis() + this.server.heartbeatToleranceMilliseconds() < System.currentTimeMillis()) {
+			throw new ReadTimeoutException();
+		}
+		return null;
+	}
+
+	Mono<StompFrame> handleSend(final StompSession session, final StompFrame inbound) {
 		final String destination = inbound.headers.getFirst(StompHeaders.DESTINATION);
 		if (destination == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompHeaders.DESTINATION));
@@ -168,7 +272,7 @@ final class StompHandler implements WebSocketHandler {
 		return this.server.onSend(session, inbound, destination, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleSubscribe(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleSubscribe(final StompSession session, final StompFrame inbound) {
 		final String destination = inbound.headers.getFirst(StompHeaders.DESTINATION);
 		if (destination == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompHeaders.DESTINATION));
@@ -184,7 +288,7 @@ final class StompHandler implements WebSocketHandler {
 			return Mono.just(StompUtils.makeError(inbound, "invalid ack mode"));
 		}
 
-		final Tuple2<AckMode, Queue<String>> existing = this.ackSubscriptionCache.computeIfAbsent(session.getId(), _ -> new ConcurrentHashMap<>())
+		final Tuple2<AckMode, Queue<String>> existing = this.ackSubscriptionCache.computeIfAbsent(session.id(), _ -> new ConcurrentHashMap<>())
 				.putIfAbsent(subscriptionId, Tuples.of(ackMode, new ConcurrentLinkedQueue<>()));
 		if (existing != null) {
 			return Mono.just(StompUtils.makeError(inbound, "id already in use"));
@@ -193,8 +297,8 @@ final class StompHandler implements WebSocketHandler {
 		return this.server.onSubscribe(session, inbound, destination, subscriptionId, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleUnsubscribe(final WebSocketSession session, final StompFrame inbound) {
-		final String sessionId = session.getId();
+	Mono<StompFrame> handleUnsubscribe(final StompSession session, final StompFrame inbound) {
+		final String sessionId = session.id();
 
 		final String subscriptionId = inbound.headers.getFirst(StompHeaders.ID);
 		if (subscriptionId == null) {
@@ -215,8 +319,8 @@ final class StompHandler implements WebSocketHandler {
 		return this.server.onUnsubscribe(session, inbound, subscriptionId, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleAckOrNack(final WebSocketSession session, final StompFrame inbound, final HeptFunction<StompServer, WebSocketSession, StompFrame, String, String, List<StompFrame>, StompFrame, Mono<StompFrame>> callback) {
-		final String sessionId = session.getId();
+	Mono<StompFrame> handleAckOrNack(final StompSession session, final StompFrame inbound, final HeptFunction<StompServer, StompSession, StompFrame, String, String, List<StompFrame>, StompFrame, Mono<StompFrame>> callback) {
+		final String sessionId = session.id();
 		final String ackId = inbound.headers.getFirst(StompHeaders.ID);
 		if (ackId == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompHeaders.ID));
@@ -276,15 +380,15 @@ final class StompHandler implements WebSocketHandler {
 		return callback.apply(this.server, session, inbound, subscription, ackId, ackOrNackMessages, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleAck(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleAck(final StompSession session, final StompFrame inbound) {
 		return this.handleAckOrNack(session, inbound, StompServer::onAck);
 	}
 
-	Mono<StompFrame> handleNack(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleNack(final StompSession session, final StompFrame inbound) {
 		return this.handleAckOrNack(session, inbound, StompServer::onNack);
 	}
 
-	Mono<StompFrame> handleTransactionFrame(final WebSocketSession session, final StompFrame inbound, final QuintFunction<StompServer, WebSocketSession, StompFrame, String, StompFrame, Mono<StompFrame>> callback) {
+	Mono<StompFrame> handleTransactionFrame(final StompSession session, final StompFrame inbound, final QuintFunction<StompServer, StompSession, StompFrame, String, StompFrame, Mono<StompFrame>> callback) {
 		final String transaction = inbound.headers.getFirst(StompUtils.TRANSACTION);
 		if (transaction == null) {
 			return Mono.just(StompUtils.makeMalformedError(inbound, StompUtils.TRANSACTION));
@@ -292,38 +396,38 @@ final class StompHandler implements WebSocketHandler {
 		return callback.apply(this.server, session, inbound, transaction, StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<StompFrame> handleBegin(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleBegin(final StompSession session, final StompFrame inbound) {
 		return this.handleTransactionFrame(session, inbound, StompServer::onBegin);
 	}
 
-	Mono<StompFrame> handleCommit(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleCommit(final StompSession session, final StompFrame inbound) {
 		return this.handleTransactionFrame(session, inbound, StompServer::onCommit);
 	}
 
-	Mono<StompFrame> handleAbort(final WebSocketSession session, final StompFrame inbound) {
+	Mono<StompFrame> handleAbort(final StompSession session, final StompFrame inbound) {
 		return this.handleTransactionFrame(session, inbound, StompServer::onAbort);
 	}
 
-	Mono<StompFrame> handleDisconnect(final WebSocketSession session, final StompFrame inbound) {
-		final String sessionId = session.getId();
+	Mono<StompFrame> handleDisconnect(final StompSession session, final StompFrame inbound) {
+		final String sessionId = session.id();
 		return this.server.onDisconnect(session, inbound, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId), StompUtils.makeReceipt(inbound));
 	}
 
-	Mono<Void> handleError(final WebSocketSession session, final StompFrame inbound, final StompFrame outbound) {
+	Mono<Void> handleError(final StompSession session, final StompFrame inbound, final StompFrame outbound) {
 		if (outbound.command != StompCommand.ERROR) {
 			return Mono.empty();
 		}
-		final String sessionId = session.getId();
+		final String sessionId = session.id();
 		return this.server.onError(session, inbound, this.ackSubscriptionCache.remove(sessionId), this.ackFrameCache.remove(sessionId), outbound);
 	}
 
-	Consumer<StompFrame> cacheMessageForAck(final WebSocketSession session) {
+	Consumer<StompFrame> cacheMessageForAck(final StompSession session) {
 		return outbound -> {
 			if (outbound.command != StompCommand.MESSAGE) {
 				return;
 			}
 
-			final String sessionId = session.getId();
+			final String sessionId = session.id();
 			final String subscription = outbound.headers.getFirst(StompHeaders.SUBSCRIPTION);
 			Assert.notNull(subscription, "Trying to send MESSAGE without subscription");
 

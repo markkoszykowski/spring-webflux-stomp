@@ -100,6 +100,19 @@ public final class StompFrame {
 		this.asByteBuffer = null;
 	}
 
+	public static boolean isHeartbeat(final @NonNull WebSocketMessage socketMessage) {
+		final DataBuffer dataBuffer = socketMessage.getPayload();
+		if (dataBuffer.readableByteCount() != EOL_BYTES.length) {
+			return false;
+		}
+		for (int i = 0; i < EOL_BYTES.length; ++i) {
+			if (dataBuffer.getByte(i) != EOL_BYTES[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	public static @NonNull StompFrame from(final @NonNull WebSocketMessage socketMessage) {
 		return new StompFrame(socketMessage);
 	}
