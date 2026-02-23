@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="true" type="CucumberJavaRunConfigurationType" factoryName="Cucumber java">
     <shortenClasspath name="NONE" />
-    <option name="VM_PARAMETERS" value="--add-opens java.base/jdk.internal.misc=ALL-UNNAMED " />
+    <option name="VM_PARAMETERS" value="--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --enable-native-access=ALL-UNNAMED" />
     <option name="WORKING_DIRECTORY" value="$MODULE_WORKING_DIR$" />
     <method v="2">
       <option name="Make" enabled="true" />

@@ -55,7 +55,10 @@ dependencies {
 }
 
 tasks.test {
-	jvmArgs("--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED")
+	jvmArgs(
+		"--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
+		"--enable-native-access=ALL-UNNAMED"
+	)
 
 	useJUnitPlatform()
 }
