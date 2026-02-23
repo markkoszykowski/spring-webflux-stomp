@@ -145,9 +145,7 @@ final class StompHandler implements WebSocketHandler {
 				.doOnNext(this.handleOutgoing(session));
 		return session.session.send(
 						sends.doOnError(ex -> log.error("Error during WebSocket receiving", ex))
-								.takeUntilOther(receives.ignoreElements())
-								.takeUntilOther(heartbeats.ignoreElements())
-								.takeUntilOther(frames.ignoreElements())
+								.takeUntilOther(Mono.firstWithSignal(receives.ignoreElements(), heartbeats.ignoreElements(), frames.ignoreElements()))
 				)
 				.doOnError(ex -> log.error("Error during WebSocket sending", ex))
 				.then(Mono.defer(this.doFinally(session)));
@@ -179,6 +177,8 @@ final class StompHandler implements WebSocketHandler {
 		return () -> {
 			dispose(session.scheduledOutgoing.getAndSet(null));
 			dispose(session.scheduledIncoming.getAndSet(null));
+			session.outgoing.tryEmitComplete();
+			session.incoming.tryEmitComplete();
 			return this.server.doFinally(session, this.ackSubscriptionCache.remove(session.id), this.ackFrameCache.remove(session.id));
 		};
 	}
