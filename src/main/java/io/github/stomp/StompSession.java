@@ -57,6 +57,23 @@ public final class StompSession {
 	}
 
 	@Override
+	public int hashCode() {
+		return Objects.hashCode(this.session);
+	}
+
+	@Override
+	public boolean equals(final Object o) {
+		if (o == this) {
+			return true;
+		}
+		if (o == null || !Objects.equals(this.getClass(), o.getClass())) {
+			return false;
+		}
+		final StompSession that = (StompSession) o;
+		return Objects.equals(this.session, that.session);
+	}
+
+	@Override
 	public @NonNull String toString() {
 		return Objects.toString(this.session);
 	}

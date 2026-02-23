@@ -27,6 +27,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 
 public final class StompFrame {
@@ -165,6 +166,30 @@ public final class StompFrame {
 		} else {
 			return contentLength < temp.length ? Arrays.copyOf(temp, contentLength) : temp;
 		}
+	}
+
+
+	@Override
+	public int hashCode() {
+		int hash = 0;
+		hash += 31 * Objects.hashCode(this.command);
+		hash += 31 * Objects.hashCode(this.headers);
+		hash += 31 * Arrays.hashCode(this.body);
+		return hash;
+	}
+
+	@Override
+	public boolean equals(final Object o) {
+		if (o == this) {
+			return true;
+		}
+		if (o == null || !Objects.equals(this.getClass(), o.getClass())) {
+			return false;
+		}
+		final StompFrame that = (StompFrame) o;
+		return Objects.equals(this.command, that.command) &&
+				Objects.equals(this.headers, that.headers) &&
+				Arrays.equals(this.body, that.body);
 	}
 
 
