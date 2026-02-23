@@ -27,8 +27,7 @@ import java.util.concurrent.ExecutionException;
 
 public class Client implements AutoCloseable {
 
-	private final WebSocketClient client;
-	private final WebSocketStompClient stompClient;
+	private final WebSocketStompClient client;
 	private final StompSession session;
 	private final Handler handler = new Handler();
 
@@ -36,13 +35,13 @@ public class Client implements AutoCloseable {
 	private final MessageQueue<Tuple2<StompHeaders, Optional<byte[]>>> queue = new MessageQueue<>();
 
 	public Client(final InetAddress address, final int port, final String path) throws ExecutionException, InterruptedException {
-		this.client = new StandardWebSocketClient();
-		this.stompClient = new WebSocketStompClient(this.client);
-		this.stompClient.setMessageConverter(new SimpleMessageConverter());
+		final WebSocketClient client = new StandardWebSocketClient();
+		this.client = new WebSocketStompClient(client);
+		this.client.setMessageConverter(new SimpleMessageConverter());
 
 		final StompHeaders headers = new StompHeaders();
 		headers.add(StompHeaders.HOST, address.getHostAddress());
-		this.session = this.stompClient.connectAsync(String.format("ws://%s:%d%s", address.getHostAddress(), port, path), (WebSocketHttpHeaders) null, headers, this.handler).get();
+		this.session = this.client.connectAsync(String.format("ws://%s:%d%s", address.getHostAddress(), port, path), (WebSocketHttpHeaders) null, headers, this.handler).get();
 	}
 
 	public boolean isConnected() {
@@ -82,7 +81,7 @@ public class Client implements AutoCloseable {
 		if (this.session.isConnected()) {
 			this.session.disconnect();
 		}
-		this.stompClient.stop();
+		this.client.stop();
 	}
 
 	private final class Handler implements StompSessionHandler {
