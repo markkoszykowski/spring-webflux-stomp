@@ -47,13 +47,13 @@ public final class StompSession {
 	final Sinks.Many<byte[]> outgoing = Sinks.many().unicast().onBackpressureBuffer();
 	final Sinks.Many<byte[]> incoming = Sinks.many().unicast().onBackpressureBuffer();
 
-	StompSession(final WebSocketSession session) {
-		this.id = session.getId();
-		this.session = session;
+	StompSession(final WebSocketSession socketSession) {
+		this.id = socketSession.getId();
+		this.session = socketSession;
 	}
 
-	public static StompSession from(final @NonNull WebSocketSession session) {
-		return new StompSession(session);
+	public static StompSession from(final @NonNull WebSocketSession socketSession) {
+		return new StompSession(socketSession);
 	}
 
 

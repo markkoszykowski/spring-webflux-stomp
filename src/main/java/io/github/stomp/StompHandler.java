@@ -17,9 +17,11 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Signal;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.Context;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
@@ -105,48 +107,134 @@ final class StompHandler implements WebSocketHandler {
 				.flatMap(outbound -> this.handleError(session, inbound, outbound).thenReturn(outbound));
 	}
 
-	Flux<StompFrame> heartbeatReceiver(final StompSession session, final Flux<WebSocketMessage> receives) {
-		return receives.filter(StompFrame::isHeartbeat)
-				.flatMap(this.doOnEachHeartbeat(session, StompServer::doOnEachInboundHeartbeat))
-				.flatMap(_ -> Mono.empty());
+	Flux<StompFrame> sources(final StompSession session) {
+		return this.server.addWebSocketSources(session)
+				.flatMapMany(Flux::merge)
+				.flatMap(outbound -> this.handleError(session, null, outbound).thenReturn(outbound));
 	}
 
-	Flux<StompFrame> frameReceiver(final StompSession session, final Flux<WebSocketMessage> receives) {
-		return receives.filter(Predicate.not(StompFrame::isHeartbeat))
-				.map(StompFrame::from)
-				.flatMap(this.doOnEachFrame(session, StompServer::doOnEachInboundFrame))
-				.takeUntil(inbound -> inbound.command == StompCommand.DISCONNECT)
-				.flatMap(this.handler(session))
-				.takeUntil(outbound -> outbound.command == StompCommand.ERROR);
+	Function<WebSocketMessage, Mono<WebSocketMessage>> receiveHeartbeats(final StompSession session) {
+		return message -> StompFrame.isHeartbeat(message) ?
+				Mono.just(message).flatMap(this.doOnEachHeartbeat(session, StompServer::doOnEachInboundHeartbeat)).then(Mono.empty()) :
+				Mono.just(message);
 	}
 
-	Flux<WebSocketMessage> heartbeatSender(final StompSession session, final Flux<StompFrame> heartbeats) {
+	Flux<WebSocketMessage> sendHeartbeats(final StompSession session) {
 		return Flux.merge(
 				session.outgoing.asFlux().flatMap(_ -> this.handleOutgoingHeartbeat(session)),
 				session.incoming.asFlux().flatMap(_ -> this.handleIncomingHeartbeat(session))
 		);
 	}
 
-	Flux<WebSocketMessage> frameSender(final StompSession session, final Flux<StompFrame> frames) {
-		return frames.mergeWith(this.server.addWebSocketSources(session).flatMapMany(Flux::merge))
-				.doOnNext(this.cacheMessageForAck(session))
-				.flatMap(this.doOnEachFrame(session, StompServer::doOnEachOutboundFrame))
-				.map(StompFrame.toWebSocketMessage(session.session.bufferFactory()));
-	}
 
 	@Override
 	public @NonNull Mono<Void> handle(final @NonNull WebSocketSession socketSession) {
-		final StompSession session = StompSession.from(socketSession);
-		final Flux<WebSocketMessage> receives = session.session.receive().cache(0)
-				.doOnNext(this.handleIncoming(session));
-		final Flux<StompFrame> heartbeats = this.heartbeatReceiver(session, receives).cache(0);
-		final Flux<StompFrame> frames = this.frameReceiver(session, receives).cache(0);
-		final Flux<WebSocketMessage> sends = Flux.merge(this.heartbeatSender(session, heartbeats), this.frameSender(session, frames))
-				.doOnNext(this.handleOutgoing(session));
-		return session.session.send(
-						sends.doOnError(ex -> log.error("Error during WebSocket receiving", ex))
-								.takeUntilOther(Mono.firstWithSignal(receives.ignoreElements(), heartbeats.ignoreElements(), frames.ignoreElements()))
-				)
+		return this.handle(StompSession.from(socketSession));
+	}
+
+
+	@SuppressWarnings(value = {"unchecked"})
+	static <T> Signal<T> mapSignal(final Signal<?> signal) {
+		return (Signal<T>) signal;
+	}
+
+	static <T> Signal<T> mapSignal(final T t, final Signal<?> signal) {
+		return Signal.next(t, Context.of(signal.getContextView()));
+	}
+
+	static <T, R> Function<Signal<T>, Signal<R>> mapSignal(final Function<? super T, ? extends R> map) {
+		return signal -> signal.isOnNext() ? mapSignal(map.apply(signal.get()), signal) : mapSignal(signal);
+	}
+
+	static <T, R> Function<Signal<T>, Mono<Signal<R>>> flatMapSignal(final Function<? super T, ? extends Mono<? extends R>> map) {
+		return signal -> signal.isOnNext() ? map.apply(signal.get()).map(r -> mapSignal(r, signal)) : Mono.just(mapSignal(signal));
+	}
+
+	static <T> Consumer<Signal<T>> doOnSignal(final Consumer<? super T> doOn) {
+		return signal -> {
+			if (signal.isOnNext()) {
+				doOn.accept(signal.get());
+			}
+		};
+	}
+
+	static <T> Predicate<Signal<T>> takeSignal(final Predicate<? super T> take) {
+		return signal -> signal.isOnNext() && take.test(signal.get());
+	}
+
+
+	static <T> Tuple2<T, Boolean> mapTuple(final T t) {
+		return Tuples.of(t, false);
+	}
+
+	static <T, U, R> Function<Tuple2<T, U>, Tuple2<R, U>> mapTuple(final Function<? super T, ? extends R> map) {
+		return tuple -> Tuples.of(map.apply(tuple.getT1()), tuple.getT2());
+	}
+
+	static <T, R> Function<Tuple2<T, Boolean>, Tuple2<R, Boolean>> mapTuple(final Function<? super T, ? extends R> map, final Predicate<? super R> test) {
+		return tuple -> {
+			final R r = map.apply(tuple.getT1());
+			return Tuples.of(r, tuple.getT2() || test.test(r));
+		};
+	}
+
+	static <T, U, R> Function<Tuple2<T, U>, Mono<Tuple2<R, U>>> flatMapTuple(final Function<? super T, ? extends Mono<? extends R>> map) {
+		return tuple -> map.apply(tuple.getT1()).map(r -> Tuples.of(r, tuple.getT2()));
+	}
+
+	static <T, R> Function<Tuple2<T, Boolean>, Mono<Tuple2<R, Boolean>>> flatMapTuple(final Function<? super T, ? extends Mono<? extends R>> map, final Predicate<? super R> test) {
+		return tuple -> map.apply(tuple.getT1()).map(r -> Tuples.of(r, tuple.getT2() || test.test(r)));
+	}
+
+	static <T, U> Consumer<Tuple2<T, U>> doOnTuple(final Consumer<? super T> doOn) {
+		return signal -> doOn.accept(signal.getT1());
+	}
+
+	static <T, U> Predicate<Tuple2<T, U>> takeTuple(final Predicate<? super T> take) {
+		return tuple -> take.test(tuple.getT1());
+	}
+
+
+	static <T> Flux<Signal<Tuple2<T, Boolean>>> source(final Flux<T> source) {
+		return source.materialize().map(mapSignal(StompHandler::mapTuple)).filter(Predicate.not(Signal::isOnComplete));
+	}
+
+
+	private Mono<Void> handle(final StompSession session) {
+		final Flux<WebSocketMessage> messages = session.session.receive()
+				.materialize()
+
+				.map(mapSignal(StompHandler::mapTuple))
+
+				.doOnNext(this.handleIncoming(session))
+
+				.flatMap(flatMapSignal(flatMapTuple(this.receiveHeartbeats(session))))
+
+				.map(mapSignal(mapTuple(StompFrame::from)))
+				.flatMap(flatMapSignal(flatMapTuple(this.doOnEachFrame(session, StompServer::doOnEachInboundFrame))))
+
+				.map(mapSignal(mapTuple(Function.identity(), inbound -> inbound.command == StompCommand.DISCONNECT)))
+
+				.flatMap(flatMapSignal(flatMapTuple(this.handler(session))))
+				.mergeWith(source(this.sources(session)))
+				.doOnNext(doOnSignal(doOnTuple(this.cacheMessageForAck(session))))
+
+				.map(mapSignal(mapTuple(Function.identity(), outbound -> outbound.command == StompCommand.ERROR)))
+
+				.flatMap(flatMapSignal(flatMapTuple(this.doOnEachFrame(session, StompServer::doOnEachOutboundFrame))))
+				.map(mapSignal(mapTuple(StompFrame.toWebSocketMessage(session.session.bufferFactory()))))
+
+				.mergeWith(source(this.sendHeartbeats(session)))
+
+				.doOnNext(this.handleOutgoing(session))
+
+				.takeUntil(takeSignal(Tuple2::getT2))
+
+				.map(mapSignal(Tuple2::getT1))
+
+				.dematerialize();
+
+		return session.session.send(messages.doOnError(ex -> log.error("Error during WebSocket receiving", ex)))
 				.doOnError(ex -> log.error("Error during WebSocket sending", ex))
 				.then(Mono.defer(this.doFinally(session)));
 	}
@@ -409,10 +497,9 @@ final class StompHandler implements WebSocketHandler {
 	}
 
 	Mono<Void> handleError(final StompSession session, final StompFrame inbound, final StompFrame outbound) {
-		if (outbound.command != StompCommand.ERROR) {
-			return Mono.empty();
-		}
-		return this.server.onError(session, inbound, this.ackSubscriptionCache.remove(session.id), this.ackFrameCache.remove(session.id), outbound);
+		return outbound.command == StompCommand.ERROR ?
+				this.server.onError(session, inbound, this.ackSubscriptionCache.remove(session.id), this.ackFrameCache.remove(session.id), outbound) :
+				Mono.empty();
 	}
 
 	Consumer<StompFrame> cacheMessageForAck(final StompSession session) {

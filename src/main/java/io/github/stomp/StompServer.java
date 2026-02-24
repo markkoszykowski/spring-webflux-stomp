@@ -316,14 +316,14 @@ public interface StompServer {
 	 * unacknowledged frames exist.
 	 *
 	 * @param session           The associated STOMP session.
-	 * @param inbound           The inbound client frame.
+	 * @param inbound           The inbound client frame. May be <code>null</code>
 	 * @param subscriptionCache The map of <code>subscription</code>s mapped to its acknowledgment mode and the queue of unacknowledged outbound <code>ack</code>s expecting an acknowledgment. May be <code>null</code>
 	 * @param frameCache        The map of <code>ack</code>s mapped to the unacknowledged outbound frames expecting an acknowledgement. May be <code>null</code>
 	 * @param outbound          The potential outbound server frame.
 	 * @see StompServer#doFinally(StompSession, Map, Map)
 	 * @see StompServer#onDisconnect(StompSession, StompFrame, Map, Map, StompFrame)
 	 */
-	default @NonNull Mono<Void> onError(final @NonNull StompSession session, final @NonNull StompFrame inbound, final @Nullable Map<String, Tuple2<AckMode, Queue<String>>> subscriptionCache, final @Nullable Map<String, StompFrame> frameCache, final @NonNull StompFrame outbound) {
+	default @NonNull Mono<Void> onError(final @NonNull StompSession session, final @Nullable StompFrame inbound, final @Nullable Map<String, Tuple2<AckMode, Queue<String>>> subscriptionCache, final @Nullable Map<String, StompFrame> frameCache, final @NonNull StompFrame outbound) {
 		return Mono.empty();
 	}
 

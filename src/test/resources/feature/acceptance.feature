@@ -8,13 +8,15 @@ Feature: STOMP WebFlux Server
     Then the STOMP server is down
 
 
-  Scenario: Client connects and subscribes
+  Scenario: Client connects, subscribes, and disconnects
     When client 'A' connects to the hello world server successfully
 
     And client 'A' subscribes to 'test' with id '1'
     Then client 'A' receives:
       | Headers.content-type     | Headers.content-length | Payload      |
       | text/plain;charset=UTF-8 | 12                     | Hello World! |
+
+    Then client 'A' disconnects
 
 
   Scenario: Duplicate subscription ids
