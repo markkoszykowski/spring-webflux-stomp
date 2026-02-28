@@ -8,6 +8,12 @@ Feature: STOMP WebFlux Server
     Then the STOMP server is down
 
 
+  Scenario: Client connects and disconnects
+    When client 'A' connects to the hello world server successfully
+
+    Then client 'A' disconnects
+
+
   Scenario: Client connects, subscribes, and disconnects
     When client 'A' connects to the hello world server successfully
 

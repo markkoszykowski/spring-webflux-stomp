@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
@@ -92,16 +91,6 @@ public interface StompServer {
 
 	default long heartbeatToleranceMilliseconds() {
 		return 0L;
-	}
-
-	/**
-	 * Adds STOMP frame sources from which frames are forwarded to the websocket client.
-	 *
-	 * @param session The session to add frame sources to.
-	 * @return The list of sources to propagate frames.
-	 */
-	default @NonNull Mono<? extends @NonNull Iterable<? extends @NonNull Publisher<@NonNull StompFrame>>> addWebSocketSources(final @NonNull StompSession session) {
-		return Mono.empty();
 	}
 
 	/**

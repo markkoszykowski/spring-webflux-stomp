@@ -3,11 +3,14 @@ package io.github.stomp;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.jspecify.annotations.NonNull;
+import org.springframework.util.Assert;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.Disposable;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.Many;
 
 import java.time.Duration;
+import java.util.ConcurrentModificationException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -44,8 +47,10 @@ public final class StompSession {
 	final AtomicReference<Disposable> scheduledOutgoing = new AtomicReference<>(null);
 	final AtomicReference<Disposable> scheduledIncoming = new AtomicReference<>(null);
 
-	final Sinks.Many<byte[]> outgoing = Sinks.many().unicast().onBackpressureBuffer();
-	final Sinks.Many<byte[]> incoming = Sinks.many().unicast().onBackpressureBuffer();
+	final Many<byte[]> outgoing = Sinks.many().unicast().onBackpressureBuffer();
+	final Many<byte[]> incoming = Sinks.many().unicast().onBackpressureBuffer();
+
+	final Many<StompFrame> frames = Sinks.many().unicast().onBackpressureBuffer();
 
 	StompSession(final WebSocketSession socketSession) {
 		this.id = socketSession.getId();
@@ -54,6 +59,27 @@ public final class StompSession {
 
 	public static StompSession from(final @NonNull WebSocketSession socketSession) {
 		return new StompSession(socketSession);
+	}
+
+
+	public boolean send(final @NonNull StompFrame frame) {
+		Assert.notNull(frame, "'frame' must not be null");
+		Assert.isTrue(
+				switch (frame.command) {
+					case RECEIPT, MESSAGE, ERROR -> true;
+					default -> false;
+				},
+				"Attempting to send invalid server frame"
+		);
+
+		return switch (this.frames.tryEmitNext(frame)) {
+			case OK -> true;
+			case FAIL_TERMINATED -> throw new IllegalStateException("Attempting to send frame to terminated session");
+			case FAIL_OVERFLOW -> false;
+			case FAIL_CANCELLED -> throw new IllegalStateException("Attempting to send frame to cancelled session");
+			case FAIL_NON_SERIALIZED -> throw new ConcurrentModificationException("Attempting to send frame concurrently");
+			case FAIL_ZERO_SUBSCRIBER -> throw new IllegalStateException("Attempting to send frame to uninitialized session");
+		};
 	}
 
 
